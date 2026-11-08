@@ -1,6 +1,6 @@
 // Service worker: guarda os arquivos no aparelho para o app abrir sem internet.
 // Para publicar uma atualização, aumente o número da versão abaixo.
-const CACHE = 'volei-v1';
+const CACHE = 'volei-v2';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon-180.png', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {

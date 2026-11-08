@@ -170,6 +170,7 @@ function merge(d,p){
   o.settings.rules={...d.settings.rules,...(ps.rules||{})};
   o.settings.teams=(Array.isArray(ps.teams)&&ps.teams.length===2)?ps.teams:d.settings.teams;
   if(!Array.isArray(o.history))o.history=[];
+  o.history.forEach(h=>{if(h.type==='match'&&h.match&&h.match.status==='encerrado'&&h.match.forceClose===undefined)h.match.forceClose=true;});
   return o;
 }
 function load(){try{const raw=localStorage.getItem(KEY);return raw?merge(defaults(),JSON.parse(raw)):defaults();}catch(e){return defaults();}}
@@ -310,6 +311,12 @@ function replay(m){
       segs.push([]);
     }
   }
+  if(m.forceClose&&winner===null&&cur[0]!==cur[1]){
+    const w=cur[0]>cur[1]?0:1;
+    sets.push({score:cur.slice(),winner:w,decider:r.bestOf>1&&idx===r.bestOf-1,forced:true});
+    wins[w]++;cur=[0,0];idx++;
+    if(wins[w]>=need)winner=w;
+  }
   if(!segs[segs.length-1].length)segs.pop();
   const dec=r.bestOf>1&&idx===r.bestOf-1;
   const target=dec?r.pointsDecider:r.pointsPerSet,interval=dec?r.switchDecider:r.switchEvery,curTotal=cur[0]+cur[1];
@@ -345,9 +352,11 @@ function renderScore(){
       ov=`<div class="ov"><h2>Set ${R.sets.length} para ${esc(m.teams[ls.winner].name)}</h2><p>${ls.score[ord[0]]} – ${ls.score[ord[1]]}</p><p>Troquem de lado para o próximo set.</p><button class="btn primary" data-act="ov-next">Começar set ${R.idx+1}</button><button class="link" data-act="undo">Desfazer último ponto</button></div>`;
     }
   }
+  const lastM=lastMatchEntry();
+  const firstBtn=(!m.points.length&&lastM)?'<button class="btn" data-act="reopen">⏮ Reabrir último</button>':`<button class="btn" data-act="undo" ${m.points.length?'':'disabled'}>↩ Desfazer</button>`;
   el.innerHTML=`<div class="sbar"><div class="l1"><span>${head}</span><span>${dot(ord[0])}<b>${R.wins[ord[0]]}</b> – <b>${R.wins[ord[1]]}</b>${dot(ord[1])}</span></div>${prev}</div>
   <div class="halves">${halves}${ui.banner?`<div class="banner">${esc(ui.banner)}</div>`:''}${ov}</div>
-  <div class="ctl"><button class="btn" data-act="undo" ${m.points.length?'':'disabled'}>↩ Desfazer</button><button class="btn" data-act="flip">🔄 Lados</button><button class="btn" data-act="new">＋ Novo jogo</button></div>`;
+  <div class="ctl">${firstBtn}<button class="btn" data-act="flip">🔄 Lados</button><button class="btn" data-act="new">＋ Novo jogo</button></div>`;
 }
 function addPoint(t){
   const m=ensureMatch(),R=replay(m);
@@ -380,12 +389,51 @@ function undo(){
 async function newGameFlow(){
   const m=S.match;
   if(m&&m.points.length&&!m.saved){
-    const r=await modal({title:'Novo jogo',text:'O jogo atual ainda não terminou. O que fazer com ele?',buttons:[{id:'save',label:'Encerrar e salvar no histórico',kind:'primary'},{id:'drop',label:'Descartar',kind:'danger'},{id:'cancel',label:'Cancelar'}]});
+    const R=replay(m);let extra='';
+    if(R.curTotal>0&&R.winner===null){
+      extra=R.cur[0]===R.cur[1]?` O set ${R.idx+1} está empatado em ${R.cur[0]}–${R.cur[1]} e não será contado.`:` Ao encerrar, o set ${R.idx+1} (${R.cur[0]}–${R.cur[1]}) vai para ${m.teams[R.cur[0]>R.cur[1]?0:1].name}.`;
+    }
+    const r=await modal({title:'Novo jogo',text:'O jogo atual ainda não terminou.'+extra+' O que fazer com ele?',buttons:[{id:'save',label:'Encerrar e salvar no histórico',kind:'primary'},{id:'drop',label:'Descartar',kind:'danger'},{id:'cancel',label:'Cancelar'}]});
     if(r.id==='cancel')return false;
-    if(r.id==='save')finishMatch('encerrado');
+    if(r.id==='save'){m.forceClose=true;finishMatch('encerrado');}
   }
   S.match=null;ui.overlay=null;ui.banner=null;save();renderScore();return true;
 }
+function lastMatchEntry(){let b=null;for(const h of S.history)if(h.type==='match'&&(!b||h.t>b.t))b=h;return b;}
+async function reopenLast(){
+  const h=lastMatchEntry();
+  if(!h){toast('Nenhum jogo para reabrir');return;}
+  const cur=S.match;
+  if(cur&&cur.points.length&&!cur.saved){
+    const r=await modal({title:'Reabrir último jogo',text:'Há um jogo em andamento. Reabrir o último vai descartar o jogo atual. Continuar?',buttons:[{id:'ok',label:'Descartar o atual e reabrir',kind:'danger'},{id:'cancel',label:'Cancelar'}]});
+    if(r.id!=='ok')return;
+  }
+  const m=clone(h.match);
+  if(m.status==='finalizado'){m.saved=true;ui.overlay={kind:'match'};}
+  else{delete m.forceClose;delete m.finishedAt;m.saved=false;m.status='andamento';S.history=S.history.filter(x=>x.id!==h.id);ui.overlay=null;}
+  ui.banner=null;S.match=m;save();go('score');toast('Jogo reaberto');
+}
+/* teclas: controle Bluetooth/USB (passador de slides) */
+function keyAct(a){
+  if(a==='U'){undo();return;}
+  if(ui.overlay){if(ui.overlay.kind==='set'){ui.overlay=null;renderScore();}return;}
+  addPoint(a==='A'?0:1);
+}
+document.addEventListener('keydown',e=>{
+  if(ui.tab!=='score'||$('.mbg'))return;
+  const tg=e.target;
+  if(tg&&(tg.tagName==='INPUT'||tg.tagName==='TEXTAREA'||tg.tagName==='SELECT'))return;
+  const k=e.key;let a=null;
+  if(k==='ArrowRight'||k==='PageDown')a='A';
+  else if(k==='ArrowLeft'||k==='PageUp')a='B';
+  else if(k===' '||k==='Spacebar'||k==='Enter')a='U';
+  if(!a)return;
+  e.preventDefault();
+  if(document.activeElement&&document.activeElement.blur)document.activeElement.blur();
+  if(e.repeat)return;
+  keyAct(a);
+});
+document.addEventListener('keyup',e=>{if(ui.tab==='score'&&(e.key===' '||e.key==='Spacebar'))e.preventDefault();});
 $('#v-score').addEventListener('click',async e=>{
   const rn=e.target.closest('[data-rename]');
   if(rn){
@@ -398,6 +446,7 @@ $('#v-score').addEventListener('click',async e=>{
   if(a){
     const act=a.dataset.act;
     if(act==='undo')undo();
+    else if(act==='reopen')reopenLast();
     else if(act==='flip'){const m=ensureMatch();m.manualFlip=!m.manualFlip;save();renderScore();}
     else if(act==='new'||act==='ov-new')newGameFlow();
     else if(act==='ov-next'){ui.overlay=null;renderScore();}
@@ -434,7 +483,8 @@ function renderHist(){
 }
 function histMatch(h){
   const m=h.match,R=replay(m),open=ui.open[h.id],T=m.teams;
-  const sc=R.sets.map(s=>`${s.score[0]}–${s.score[1]}`);
+  const isLast=lastMatchEntry()===h;
+  const sc=R.sets.map(s=>`${s.score[0]}–${s.score[1]}${s.forced?'⏱':''}`);
   if(R.winner===null&&R.curTotal>0)sc.push(`${R.cur[0]}–${R.cur[1]} (em aberto)`);
   const st=m.status==='finalizado'?'<span class="tag ok">finalizado</span>':'<span class="tag">encerrado</span>';
   let det='';
@@ -442,8 +492,8 @@ function histMatch(h){
     const dur=m.startedAt&&m.finishedAt?Math.max(1,Math.round((m.finishedAt-m.startedAt)/60000))+' min':'—';
     det=`<div class="det"><p>Início ${fmtTime(m.startedAt||h.t)} · duração ${dur} · ${m.points.length} pontos</p><p>${esc(rulesText(m.rules))}</p>`+
     T.map((t,i)=>t.players&&t.players.length?`<p><b style="color:${esc(t.color)}">${esc(t.name)}:</b> ${esc(t.players.join(', '))}</p>`:'').join('')+
-    R.segs.map((sg,i)=>{const s=R.sets[i];return `<p>Set ${i+1}${s?` — ${s.score[0]}–${s.score[1]}`:' — em aberto'} (ponto a ponto)</p><div class="dots">${sg.map(t=>`<span style="background:${esc(T[t].color)}"></span>`).join('')}</div>`;}).join('')+
-    `<div class="acts"><button class="btn danger" data-del="${h.id}">Apagar</button></div></div>`;
+    R.segs.map((sg,i)=>{const s=R.sets[i];return `<p>Set ${i+1}${s?` — ${s.score[0]}–${s.score[1]}${s.forced?' (encerrado por tempo: set para quem liderava)':''}`:' — em aberto'} (ponto a ponto)</p><div class="dots">${sg.map(t=>`<span style="background:${esc(T[t].color)}"></span>`).join('')}</div>`;}).join('')+
+    `<div class="acts">${isLast?`<button class="btn" data-reopen="${h.id}">↩ Reabrir jogo</button>`:''}<button class="btn danger" data-del="${h.id}">Apagar</button></div></div>`;
   }
   return `<div class="hi"><button class="hd" data-toggle="${h.id}"><div class="hm"><span class="nm"><i style="background:${esc(T[0].color)}"></i>${esc(T[0].name)}</span><b>${R.wins[0]} × ${R.wins[1]}</b><span class="nm r">${esc(T[1].name)}<i style="background:${esc(T[1].color)};margin:0 0 0 6px"></i></span></div><div class="sub">🏐 ${fmtTime(h.t)} · ${sc.join(' · ')||'sem pontos'} ${st}</div></button>${det}</div>`;
 }
@@ -458,6 +508,7 @@ function histDraw(h){
 }
 $('#v-hist').addEventListener('click',async e=>{
   const f=e.target.closest('[data-f]');if(f){ui.hist=f.dataset.f;renderHist();return;}
+  if(e.target.closest('[data-reopen]')){reopenLast();return;}
   const tg=e.target.closest('[data-toggle]');if(tg){ui.open[tg.dataset.toggle]=!ui.open[tg.dataset.toggle];renderHist();return;}
   const d=e.target.closest('[data-del]');
   if(d){
@@ -496,6 +547,7 @@ function renderConf(){
   <h2>Placar</h2>
   <div class="row"><div class="lbl">Manter a tela acesa<small>Enquanto o placar estiver aberto.</small></div><label class="sw"><input type="checkbox" data-sw="keepAwake" ${s.keepAwake?'checked':''}><i></i></label></div>
   <div class="row"><div class="lbl">Inverter os lados automaticamente<small>Acompanha a troca de quadra (e a cada novo set).</small></div><label class="sw"><input type="checkbox" data-sw="autoFlip" ${s.autoFlip?'checked':''}><i></i></label></div>
+  <p class="sub" style="margin:8px 2px">Controle por teclas (Bluetooth ou USB): → ou PageDown = ponto do primeiro time; ← ou PageUp = ponto do segundo time; Espaço ou Enter = desfazer.</p>
   <h2>Dados</h2>
   <div class="acts" style="flex-direction:column"><button class="btn" data-a="export">⬆️ Exportar backup</button><button class="btn" data-a="import">⬇️ Importar backup</button><button class="btn" data-a="beach">🏖️ Restaurar regras do vôlei de areia</button><button class="btn danger" data-a="wipe">Apagar todo o histórico</button></div>
   <p class="sub" style="margin:14px 2px">Tudo fica salvo só neste aparelho. Exporte um backup de vez em quando.</p>`;
