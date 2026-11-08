@@ -70,6 +70,7 @@ textarea{resize:vertical;min-height:140px}
 .rowx small{display:block;color:var(--mut);font-size:12px;line-height:1.3;margin-top:2px}
 .rowx .bot{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line);color:var(--mut);font-size:14px}
 .step .val{width:auto;min-width:60px;height:38px;border:0;border-bottom:1px dashed var(--mut);border-radius:0;background:none;color:var(--tx);font-size:17px;font-weight:700;font-variant-numeric:tabular-nums}
+.ver{text-align:center;color:var(--mut);font-size:12px;margin:22px 0 4px}
 /* placar */
 #v-score{padding:0;overflow:hidden}
 #v-score.on{display:flex;flex-direction:column}
@@ -175,6 +176,7 @@ function effRules(r){
 }
 const PALETTE=['#e4572e','#2a7de1','#2fb36a','#e9b100','#9b59d0','#17a2b8','#e0457b','#7d8a99','#8bc34a','#ff8a3d','#3f51b5','#795548'];
 
+const VERSION='4';
 const KEY='volei.v1';
 const defaults=()=>({v:1,settings:{preset:'areia',rules:{...BEACH},teams:[{name:'Time A',color:'#e4572e'},{name:'Time B',color:'#2a7de1'}],keepAwake:true,autoFlip:true,drawMode:'teams',drawTeams:2,drawPer:4},names:'',history:[],match:null});
 function merge(d,p){
@@ -571,7 +573,8 @@ function renderConf(){
   <p class="sub" style="margin:8px 2px">Controle por teclas (Bluetooth ou USB): → ou PageDown = ponto do primeiro time; ← ou PageUp = ponto do segundo time; Espaço ou Enter = desfazer.</p>
   <h2>Dados</h2>
   <div class="acts" style="flex-direction:column"><button class="btn" data-a="export">⬆️ Exportar backup</button><button class="btn" data-a="import">⬇️ Importar backup</button><button class="btn" data-a="beach">🏖️ Restaurar regras do vôlei de areia</button><button class="btn danger" data-a="wipe">Apagar todo o histórico</button></div>
-  <p class="sub" style="margin:14px 2px">Tudo fica salvo só neste aparelho. Exporte um backup de vez em quando.</p>`;
+  <p class="sub" style="margin:14px 2px">Tudo fica salvo só neste aparelho. Exporte um backup de vez em quando.</p>
+  <p class="ver">Vôlei · versão ${VERSION}</p>`;
 }
 function applyPreset(k){S.settings.rules={...PRESETS[k].rules};S.settings.preset=k;save();renderConf();}
 $('#v-conf').addEventListener('click',async e=>{
