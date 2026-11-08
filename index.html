@@ -64,6 +64,12 @@ textarea{resize:vertical;min-height:140px}
 .sw input:checked+i:after{transform:translateX(22px)}
 .tcfg{display:flex;gap:8px;align-items:center;margin:8px 0}
 .tcfg input[type=color]{width:52px;height:46px;padding:2px;border-radius:12px;border:1px solid var(--line);background:var(--card);flex:none}
+.rowx{background:var(--card);border-radius:12px;padding:12px 14px;margin:8px 0}
+.rowx .top{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.rowx .lbl{flex:1;min-width:0}
+.rowx small{display:block;color:var(--mut);font-size:12px;line-height:1.3;margin-top:2px}
+.rowx .bot{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line);color:var(--mut);font-size:14px}
+.step .val{width:auto;min-width:60px;height:38px;border:0;border-bottom:1px dashed var(--mut);border-radius:0;background:none;color:var(--tx);font-size:17px;font-weight:700;font-variant-numeric:tabular-nums}
 /* placar */
 #v-score{padding:0;overflow:hidden}
 #v-score.on{display:flex;flex-direction:column}
@@ -144,21 +150,29 @@ const clone=o=>JSON.parse(JSON.stringify(o));
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 
 /* ====== Regras e predefinições ====== */
-const BEACH={bestOf:3,pointsPerSet:21,pointsDecider:15,winBy:2,cap:0,switchEvery:7,switchDecider:5};
+const BEACH={bestOf:3,pointsPerSet:21,pointsDecider:15,winBy:2,cap:30,switchEvery:7,switchDecider:5,deciderOn:true,winByOn:true,capOn:false,switchOn:true,switchDeciderOn:true};
 const PRESETS={
   areia:{label:'Vôlei de areia',rules:BEACH},
-  quadra:{label:'Vôlei de quadra',rules:{bestOf:5,pointsPerSet:25,pointsDecider:15,winBy:2,cap:0,switchEvery:0,switchDecider:8}},
-  rapido:{label:'Rápido (1 set de 15)',rules:{bestOf:1,pointsPerSet:15,pointsDecider:15,winBy:2,cap:0,switchEvery:5,switchDecider:5}}
+  quadra:{label:'Vôlei de quadra',rules:{bestOf:5,pointsPerSet:25,pointsDecider:15,winBy:2,cap:35,switchEvery:8,switchDecider:8,deciderOn:true,winByOn:true,capOn:false,switchOn:false,switchDeciderOn:true}},
+  rapido:{label:'Rápido (1 set de 15)',rules:{bestOf:1,pointsPerSet:15,pointsDecider:15,winBy:2,cap:25,switchEvery:5,switchDecider:5,deciderOn:false,winByOn:true,capOn:false,switchOn:true,switchDeciderOn:false}}
 };
 const FIELDS=[
-  ['bestOf','Melhor de (sets)','Ganha quem vencer a maioria dos sets.',1,9,2],
-  ['pointsPerSet','Pontos por set','',1,99,1],
-  ['pointsDecider','Pontos do set decisivo','Último set possível (ex.: o 3º em melhor de 3).',1,99,1],
-  ['winBy','Diferença mínima','Vantagem necessária para fechar o set.',1,5,1],
-  ['cap','Limite máximo de pontos','Ao chegar nele o set acaba, mesmo sem a diferença.',0,199,1],
-  ['switchEvery','Troca de lado a cada','Soma de pontos no set. Zero = sem troca.',0,50,1],
-  ['switchDecider','Troca no set decisivo a cada','Soma de pontos no set decisivo.',0,50,1]
+  {k:'bestOf',label:'Melhor de (sets)',desc:'Número ímpar de sets. Ganha quem vencer a maioria.',min:1,max:999,step:2},
+  {k:'pointsPerSet',label:'Pontos por set',desc:'',min:1,max:999,step:1},
+  {k:'pointsDecider',flag:'deciderOn',label:'Pontos diferentes no set decisivo',desc:'Desligado: o set decisivo usa os mesmos pontos dos outros sets.',val:'Pontos no set decisivo',min:1,max:999,step:1},
+  {k:'winBy',flag:'winByOn',label:'Diferença mínima para fechar o set',desc:'Desligado: vence quem chegar primeiro aos pontos do set.',val:'Diferença mínima',min:1,max:20,step:1},
+  {k:'cap',flag:'capOn',label:'Limite máximo de pontos',desc:'Ao chegar nele o set acaba, mesmo sem a diferença.',val:'Limite de pontos',min:1,max:999,step:1},
+  {k:'switchEvery',flag:'switchOn',label:'Troca de lado durante o set',desc:'A cada tantos pontos somados no set. Desligado: sem troca.',val:'Trocar a cada (pontos)',min:1,max:99,step:1},
+  {k:'switchDecider',flag:'switchDeciderOn',label:'Troca de lado diferente no set decisivo',desc:'Desligado: usa a mesma troca dos outros sets.',val:'Trocar a cada (pontos)',min:1,max:99,step:1}
 ];
+/* regras efetivas: aplica os liga/desliga. Jogos antigos (sem os campos) seguem a regra antiga. */
+function effRules(r){
+  const capOn=r.capOn===undefined?r.cap>0:r.capOn;
+  const swOn=r.switchOn===undefined?r.switchEvery>0:r.switchOn;
+  const sw=swOn?r.switchEvery:0;
+  const swD=r.switchDeciderOn===undefined?r.switchDecider:(r.switchDeciderOn?r.switchDecider:sw);
+  return {bestOf:r.bestOf,pointsPerSet:r.pointsPerSet,pointsDecider:r.deciderOn===false?r.pointsPerSet:r.pointsDecider,winBy:r.winByOn===false?1:r.winBy,cap:capOn?r.cap:0,switchEvery:sw,switchDecider:swD};
+}
 const PALETTE=['#e4572e','#2a7de1','#2fb36a','#e9b100','#9b59d0','#17a2b8','#e0457b','#7d8a99','#8bc34a','#ff8a3d','#3f51b5','#795548'];
 
 const KEY='volei.v1';
@@ -167,7 +181,14 @@ function merge(d,p){
   const ps=p.settings||{};
   const o={...d,...p};
   o.settings={...d.settings,...ps};
-  o.settings.rules={...d.settings.rules,...(ps.rules||{})};
+  const pr=ps.rules||{},rr={...d.settings.rules,...pr};
+  if(pr.capOn===undefined&&Object.keys(pr).length){
+    rr.deciderOn=true;rr.winByOn=true;
+    rr.capOn=(pr.cap||0)>0;if(!(rr.cap>0))rr.cap=Math.max(rr.pointsPerSet,rr.pointsDecider)+9;
+    rr.switchOn=(pr.switchEvery===undefined?7:pr.switchEvery)>0;if(!(rr.switchEvery>0))rr.switchEvery=7;
+    rr.switchDeciderOn=(pr.switchDecider===undefined?5:pr.switchDecider)>0;if(!(rr.switchDecider>0))rr.switchDecider=5;
+  }
+  o.settings.rules=rr;
   o.settings.teams=(Array.isArray(ps.teams)&&ps.teams.length===2)?ps.teams:d.settings.teams;
   if(!Array.isArray(o.history))o.history=[];
   o.history.forEach(h=>{if(h.type==='match'&&h.match&&h.match.status==='encerrado'&&h.match.forceClose===undefined)h.match.forceClose=true;});
@@ -181,10 +202,10 @@ const ui={tab:'draw',overlay:null,banner:null,hist:'all',open:{},draw:null};
 /* ====== Utilidades de interface ====== */
 let tt;
 function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.add('on');clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('on'),2200);}
-function modal({title,text,input,buttons}){
+function modal({title,text,input,buttons,numeric}){
   return new Promise(res=>{
     const bg=document.createElement('div');bg.className='mbg';
-    bg.innerHTML=`<div class="mbox"><h3>${esc(title||'')}</h3>${text?`<p>${esc(text)}</p>`:''}${input!==undefined?`<input id="minp" value="${esc(input)}" maxlength="40">`:''}<div class="mbtns">${buttons.map(b=>`<button class="btn ${b.kind||''}" data-id="${b.id}">${esc(b.label)}</button>`).join('')}</div></div>`;
+    bg.innerHTML=`<div class="mbox"><h3>${esc(title||'')}</h3>${text?`<p>${esc(text)}</p>`:''}${input!==undefined?`<input id="minp" value="${esc(input)}" maxlength="40"${numeric?' inputmode="numeric" pattern="[0-9]*"':''}>`:''}<div class="mbtns">${buttons.map(b=>`<button class="btn ${b.kind||''}" data-id="${b.id}">${esc(b.label)}</button>`).join('')}</div></div>`;
     const done=id=>{const v=input!==undefined?$('#minp',bg).value:undefined;bg.remove();res({id,value:v});};
     bg.addEventListener('click',e=>{const b=e.target.closest('[data-id]');if(b)done(b.dataset.id);else if(e.target===bg)done('cancel');});
     document.body.appendChild(bg);
@@ -299,7 +320,7 @@ function setDone(cur,t,target,r){
   return cur[t]>=target&&cur[t]-cur[o]>=r.winBy;
 }
 function replay(m){
-  const r=m.rules,need=Math.ceil(r.bestOf/2);
+  const r=effRules(m.rules),need=Math.ceil(r.bestOf/2);
   const sets=[],segs=[[]];let cur=[0,0],idx=0,wins=[0,0],winner=null,ended=false;
   for(const t of m.points){
     cur[t]++;segs[segs.length-1].push(t);ended=false;
@@ -323,16 +344,16 @@ function replay(m){
   let flip;
   if(winner===null)flip=(idx+(interval>0?Math.floor(curTotal/interval):0))%2===1;
   else{const ls=sets[sets.length-1],iv=ls.decider?r.switchDecider:r.switchEvery;flip=((idx-1)+(iv>0?Math.floor((ls.score[0]+ls.score[1])/iv):0))%2===1;}
-  return {sets,cur,idx,wins,winner,ended,dec,target,interval,curTotal,segs,derivedFlip:flip,need};
+  return {sets,cur,idx,wins,winner,ended,dec,target,interval,curTotal,segs,derivedFlip:flip,need,r};
 }
 function badge(R,m,t){
   if(R.winner!==null)return '';
   const c=R.cur.slice();c[t]++;
-  if(!setDone(c,t,R.target,m.rules))return '';
+  if(!setDone(c,t,R.target,R.r))return '';
   return R.wins[t]+1>=R.need?'PONTO DE JOGO':'PONTO DE SET';
 }
 function renderScore(){
-  const el=$('#v-score'),m=ensureMatch(),R=replay(m),r=m.rules;
+  const el=$('#v-score'),m=ensureMatch(),R=replay(m),r=R.r;
   const flip=((S.settings.autoFlip&&R.derivedFlip)?1:0)^(m.manualFlip?1:0);
   const ord=flip?[1,0]:[0,1];
   const head=R.winner!==null?'Fim de jogo':`Set ${R.idx+1}${R.dec?' (decisivo)':''} · até ${R.target}${r.winBy>1?` (dif. ${r.winBy})`:''}`;
@@ -466,7 +487,7 @@ function dayLabel(t){
   if(d.toDateString()===y.toDateString())return 'Ontem';
   return d.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'});
 }
-function rulesText(r){return `Melhor de ${r.bestOf} · ${r.pointsPerSet} pts${r.bestOf>1?` (${r.pointsDecider} no decisivo)`:''} · dif. ${r.winBy}${r.cap?` · limite ${r.cap}`:''}${r.switchEvery?` · troca a cada ${r.switchEvery}`:''}`;}
+function rulesText(raw){const r=effRules(raw);return `Melhor de ${r.bestOf} · ${r.pointsPerSet} pts${r.bestOf>1&&r.pointsDecider!==r.pointsPerSet?` (${r.pointsDecider} no decisivo)`:''} · ${r.winBy>1?`dif. ${r.winBy}`:'sem diferença mínima'}${r.cap?` · limite ${r.cap}`:''}${r.switchEvery?` · troca a cada ${r.switchEvery}`:' · sem troca'}${r.bestOf>1&&r.switchDecider!==r.switchEvery?` (${r.switchDecider||'sem troca'} no decisivo)`:''}`;}
 function renderHist(){
   const el=$('#v-hist'),f=ui.hist;
   const cm=S.history.filter(h=>h.type==='match').length,cd=S.history.filter(h=>h.type==='draw').length;
@@ -525,22 +546,22 @@ $('#v-hist').addEventListener('click',async e=>{
 
 /* ====== CONFIGURAÇÕES ====== */
 function samePreset(){
-  for(const [k,p] of Object.entries(PRESETS)){
-    if(Object.keys(p.rules).every(x=>p.rules[x]===S.settings.rules[x]))return k;
-  }
+  const cur=JSON.stringify(effRules(S.settings.rules));
+  for(const [k,p] of Object.entries(PRESETS)){if(JSON.stringify(effRules(p.rules))===cur)return k;}
   return 'custom';
 }
-function fieldVal(k,v){
-  if(k==='cap')return v?String(v):'sem limite';
-  if(k.startsWith('switch'))return v?String(v):'não troca';
-  return String(v);
+function stepHtml(f,R){return `<div class="step"><button data-rs="${f.k}" data-d="-1">−</button><button class="val" data-edit="${f.k}">${R[f.k]}</button><button data-rs="${f.k}" data-d="1">+</button></div>`;}
+function fieldHtml(f,R){
+  if(!f.flag)return `<div class="row"><div class="lbl">${f.label}${f.desc?`<small>${f.desc}</small>`:''}</div>${stepHtml(f,R)}</div>`;
+  const on=!!R[f.flag];
+  return `<div class="rowx"><div class="top"><div class="lbl">${f.label}<small>${f.desc}</small></div><label class="sw"><input type="checkbox" data-rt="${f.flag}" ${on?'checked':''}><i></i></label></div>${on?`<div class="bot"><span>${f.val}</span>${stepHtml(f,R)}</div>`:''}</div>`;
 }
 function renderConf(){
   const s=S.settings,R=s.rules,el=$('#v-conf');
   el.innerHTML=`<h1>Configurações</h1>
   <h2>Regras do jogo</h2>
   <div class="chips">${Object.entries(PRESETS).map(([k,p])=>`<button class="chip ${s.preset===k?'on':''}" data-preset="${k}">${esc(p.label)}</button>`).join('')}${s.preset==='custom'?'<button class="chip on">Personalizado</button>':''}</div>
-  ${FIELDS.map(([k,l,d])=>`<div class="row"><div class="lbl">${l}${d?`<small>${d}</small>`:''}</div><div class="step"><button data-rs="${k}" data-d="-1">−</button><b>${fieldVal(k,R[k])}</b><button data-rs="${k}" data-d="1">+</button></div></div>`).join('')}
+  ${FIELDS.map(f=>fieldHtml(f,R)).join('')}
   <p class="sub" style="margin:8px 2px">As regras valem para o próximo jogo. Um jogo já começado mantém as regras com que iniciou.</p>
   <h2>Times no placar</h2>
   ${s.teams.map((t,i)=>`<div class="tcfg"><input data-tn="${i}" value="${esc(t.name)}" maxlength="24"><input type="color" data-tc="${i}" value="${esc(t.color)}"></div>`).join('')}
@@ -557,13 +578,20 @@ $('#v-conf').addEventListener('click',async e=>{
   const p=e.target.closest('[data-preset]');if(p){applyPreset(p.dataset.preset);return;}
   const b=e.target.closest('[data-rs]');
   if(b){
-    const k=b.dataset.rs,d=+b.dataset.d,R=S.settings.rules,f=FIELDS.find(x=>x[0]===k);
-    if(k==='cap'){
-      if(d>0&&R.cap===0)R.cap=Math.max(R.pointsPerSet,R.pointsDecider)+9;
-      else if(d<0&&R.cap>0&&R.cap-1<Math.max(R.pointsPerSet,R.pointsDecider))R.cap=0;
-      else R.cap=clamp(R.cap+d,0,199);
-    }else R[k]=clamp(R[k]+d*f[5],f[3],f[4]);
+    const k=b.dataset.rs,d=+b.dataset.d,R=S.settings.rules,f=FIELDS.find(x=>x.k===k);
+    R[k]=clamp(R[k]+d*f.step,f.min,f.max);
     S.settings.preset=samePreset();save();renderConf();return;
+  }
+  const ed=e.target.closest('[data-edit]');
+  if(ed){
+    const k=ed.dataset.edit,f=FIELDS.find(x=>x.k===k),R=S.settings.rules;
+    const r=await modal({title:f.val||f.label,text:k==='bestOf'?'Use um número ímpar de sets (1, 3, 5, 7...).':'',input:String(R[k]),numeric:true,buttons:[{id:'ok',label:'Salvar',kind:'primary'},{id:'cancel',label:'Cancelar'}]});
+    if(r.id!=='ok')return;
+    let v=parseInt(r.value,10);
+    if(isNaN(v)){toast('Digite um número');return;}
+    v=clamp(v,f.min,f.max);
+    if(k==='bestOf'&&v%2===0){v=Math.min(v+1,f.max);toast('Melhor de precisa ser ímpar: ajustei para '+v);}
+    R[k]=v;S.settings.preset=samePreset();save();renderConf();return;
   }
   const a=e.target.closest('[data-a]');
   if(a){
@@ -580,6 +608,12 @@ $('#v-conf').addEventListener('input',e=>{
   if(tc!==undefined){S.settings.teams[+tc].color=e.target.value;save();}
 });
 $('#v-conf').addEventListener('change',e=>{
+  const rt=e.target.dataset.rt;
+  if(rt){
+    const R=S.settings.rules;R[rt]=e.target.checked;
+    if(rt==='capOn'&&R.capOn&&R.cap<Math.max(R.pointsPerSet,R.pointsDecider))R.cap=Math.max(R.pointsPerSet,R.pointsDecider)+9;
+    S.settings.preset=samePreset();save();renderConf();return;
+  }
   const sw=e.target.dataset.sw;
   if(sw){S.settings[sw]=e.target.checked;save();wake();}
 });
