@@ -88,7 +88,8 @@ textarea{resize:vertical;min-height:140px}
 .badge{position:absolute;bottom:10px;background:#fff;color:#111;font-weight:800;font-size:12px;letter-spacing:.05em;padding:4px 10px;border-radius:99px;pointer-events:none}
 @media (orientation:landscape){.halves{flex-direction:row}.num{font-size:min(24vw,48vh)}}
 .ctl{display:flex;gap:8px;padding:8px 12px;background:#12151b}
-.ctl .btn{flex:1;padding:10px 4px;font-size:14px}
+.ctl .btn{flex:1;min-width:0;padding:10px 2px;font-size:13px;white-space:nowrap}
+@media (max-width:380px){.ctl{gap:5px;padding:8px 8px}.ctl .btn{font-size:12px;padding:10px 0}}
 .ov{position:absolute;inset:0;background:rgba(10,12,16,.9);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center;padding:24px;z-index:5}
 .ov h2{font-size:26px;margin:0;text-transform:none;letter-spacing:0;color:var(--tx)}
 .ov p{margin:0;color:var(--mut);font-size:16px}
@@ -176,7 +177,7 @@ function effRules(r){
 }
 const PALETTE=['#e4572e','#2a7de1','#2fb36a','#e9b100','#9b59d0','#17a2b8','#e0457b','#7d8a99','#8bc34a','#ff8a3d','#3f51b5','#795548'];
 
-const VERSION='4';
+const VERSION='5';
 const KEY='volei.v1';
 const defaults=()=>({v:1,settings:{preset:'areia',rules:{...BEACH},teams:[{name:'Time A',color:'#e4572e'},{name:'Time B',color:'#2a7de1'}],keepAwake:true,autoFlip:true,drawMode:'teams',drawTeams:2,drawPer:4},names:'',history:[],match:null});
 function merge(d,p){
@@ -358,7 +359,7 @@ function renderScore(){
   const el=$('#v-score'),m=ensureMatch(),R=replay(m),r=R.r;
   const flip=((S.settings.autoFlip&&R.derivedFlip)?1:0)^(m.manualFlip?1:0);
   const ord=flip?[1,0]:[0,1];
-  const head=R.winner!==null?'Fim de jogo':`Set ${R.idx+1}${R.dec?' (decisivo)':''} · até ${R.target}${r.winBy>1?` (dif. ${r.winBy})`:''}`;
+  const head=R.winner!==null?'Fim de jogo':m.saved?'Jogo encerrado':`Set ${R.idx+1}${R.dec?' (decisivo)':''} · até ${R.target}${r.winBy>1?` (dif. ${r.winBy})`:''}`;
   const dot=i=>`<i style="background:${esc(m.teams[i].color)}"></i>`;
   const prev=R.sets.length?`<div class="l2">Sets: ${R.sets.map(s=>`${s.score[ord[0]]}–${s.score[ord[1]]}`).join(' · ')}</div>`:'';
   const halves=ord.map(i=>{
@@ -366,6 +367,7 @@ function renderScore(){
     const n=R.winner!==null?R.sets[R.sets.length-1].score[i]:R.cur[i];
     return `<div class="half" data-team="${i}" style="background:${esc(t.color)}"><button class="tname" data-rename="${i}">${esc(t.name)} ✎</button>${t.players&&t.players.length?`<div class="pl">${esc(t.players.join(' · '))}</div>`:''}<div class="num">${n}</div>${b?`<div class="badge">${b}</div>`:''}</div>`;
   }).join('');
+  if(m.saved&&!ui.overlay)ui.overlay={kind:m.status==='finalizado'?'match':'end'};
   let ov='';
   if(ui.overlay){
     const ls=R.sets[R.sets.length-1];
@@ -373,13 +375,17 @@ function renderScore(){
       ov=`<div class="ov"><div style="font-size:54px">🏆</div><h2>${esc(m.teams[R.winner].name)} venceu!</h2><p>${esc(m.teams[ord[0]].name)} ${R.wins[ord[0]]} × ${R.wins[ord[1]]} ${esc(m.teams[ord[1]].name)}<br>${R.sets.map(s=>`${s.score[ord[0]]}–${s.score[ord[1]]}`).join(' · ')}</p><p>Jogo salvo no histórico.</p><button class="btn primary" data-act="ov-new">Novo jogo</button><button class="btn" data-act="ov-hist">Ver histórico</button><button class="link" data-act="undo">Desfazer último ponto</button></div>`;
     }else if(ui.overlay.kind==='set'&&ls){
       ov=`<div class="ov"><h2>Set ${R.sets.length} para ${esc(m.teams[ls.winner].name)}</h2><p>${ls.score[ord[0]]} – ${ls.score[ord[1]]}</p><p>Troquem de lado para o próximo set.</p><button class="btn primary" data-act="ov-next">Começar set ${R.idx+1}</button><button class="link" data-act="undo">Desfazer último ponto</button></div>`;
+    }else if(ui.overlay.kind==='end'){
+      const tie=R.wins[0]===R.wins[1],forced=R.sets.some(x=>x.forced);
+      const title=tie?'Jogo empatado':`${esc(m.teams[R.wins[0]>R.wins[1]?0:1].name)} venceu!`;
+      ov=`<div class="ov"><div style="font-size:54px">${tie?'🤝':'🏆'}</div><h2>${title}</h2><p>${esc(m.teams[ord[0]].name)} ${R.wins[ord[0]]} × ${R.wins[ord[1]]} ${esc(m.teams[ord[1]].name)}${R.sets.length?`<br>${R.sets.map(x=>`${x.score[ord[0]]}–${x.score[ord[1]]}${x.forced?'⏱':''}`).join(' · ')}`:''}</p><p>Jogo encerrado e salvo no histórico.${forced?' O set em andamento ficou com quem estava na frente.':''}</p><button class="btn primary" data-act="ov-new">Novo jogo</button><button class="btn" data-act="ov-hist">Ver histórico</button><button class="link" data-act="ov-reopen">↩ Reabrir jogo</button></div>`;
     }
   }
   const lastM=lastMatchEntry();
-  const firstBtn=(!m.points.length&&lastM)?'<button class="btn" data-act="reopen">⏮ Reabrir último</button>':`<button class="btn" data-act="undo" ${m.points.length?'':'disabled'}>↩ Desfazer</button>`;
+  const firstBtn=(!m.points.length&&lastM)?'<button class="btn" data-act="reopen">⏮ Reabrir</button>':`<button class="btn" data-act="undo" ${m.points.length?'':'disabled'}>↩ Desfazer</button>`;
   el.innerHTML=`<div class="sbar"><div class="l1"><span>${head}</span><span>${dot(ord[0])}<b>${R.wins[ord[0]]}</b> – <b>${R.wins[ord[1]]}</b>${dot(ord[1])}</span></div>${prev}</div>
   <div class="halves">${halves}${ui.banner?`<div class="banner">${esc(ui.banner)}</div>`:''}${ov}</div>
-  <div class="ctl">${firstBtn}<button class="btn" data-act="flip">🔄 Lados</button><button class="btn" data-act="new">＋ Novo jogo</button></div>`;
+  <div class="ctl">${firstBtn}<button class="btn" data-act="flip">🔄 Lados</button><button class="btn" data-act="end">🏁 Encerrar</button><button class="btn" data-act="new">＋ Novo jogo</button></div>`;
 }
 function addPoint(t){
   const m=ensureMatch(),R=replay(m);
@@ -404,18 +410,30 @@ function finishMatch(status){
 }
 function undo(){
   const m=S.match;if(!m||!m.points.length)return;
+  if(m.saved&&m.status==='encerrado'){reopenLast();return;}
   m.points.pop();m.times.pop();
   if(m.saved){S.history=S.history.filter(h=>!(h.type==='match'&&h.id===m.id));m.saved=false;m.status='andamento';delete m.finishedAt;}
   if(!m.points.length)m.startedAt=null;
   ui.overlay=null;ui.banner=null;save();renderScore();
 }
+function leaderInfo(m){
+  const R=replay(m);
+  if(R.curTotal===0||R.winner!==null)return '';
+  return R.cur[0]===R.cur[1]?` O set ${R.idx+1} está empatado em ${R.cur[0]}–${R.cur[1]} e não será contado.`:` Ao encerrar, o set ${R.idx+1} (${R.cur[0]}–${R.cur[1]}) vai para ${m.teams[R.cur[0]>R.cur[1]?0:1].name}.`;
+}
+async function endGame(){
+  const m=ensureMatch();
+  if(m.saved){ui.overlay={kind:m.status==='finalizado'?'match':'end'};renderScore();return;}
+  if(!m.points.length){toast('Nenhum ponto marcado ainda');return;}
+  const r=await modal({title:'Encerrar o jogo?',text:'O resultado será salvo no histórico.'+leaderInfo(m),buttons:[{id:'ok',label:'Encerrar e ver o vencedor',kind:'primary'},{id:'cancel',label:'Cancelar'}]});
+  if(r.id!=='ok')return;
+  m.forceClose=true;finishMatch('encerrado');
+  ui.overlay={kind:'end'};ui.banner=null;renderScore();
+}
 async function newGameFlow(){
   const m=S.match;
   if(m&&m.points.length&&!m.saved){
-    const R=replay(m);let extra='';
-    if(R.curTotal>0&&R.winner===null){
-      extra=R.cur[0]===R.cur[1]?` O set ${R.idx+1} está empatado em ${R.cur[0]}–${R.cur[1]} e não será contado.`:` Ao encerrar, o set ${R.idx+1} (${R.cur[0]}–${R.cur[1]}) vai para ${m.teams[R.cur[0]>R.cur[1]?0:1].name}.`;
-    }
+    const extra=leaderInfo(m);
     const r=await modal({title:'Novo jogo',text:'O jogo atual ainda não terminou.'+extra+' O que fazer com ele?',buttons:[{id:'save',label:'Encerrar e salvar no histórico',kind:'primary'},{id:'drop',label:'Descartar',kind:'danger'},{id:'cancel',label:'Cancelar'}]});
     if(r.id==='cancel')return false;
     if(r.id==='save'){m.forceClose=true;finishMatch('encerrado');}
@@ -472,6 +490,8 @@ $('#v-score').addEventListener('click',async e=>{
     else if(act==='reopen')reopenLast();
     else if(act==='flip'){const m=ensureMatch();m.manualFlip=!m.manualFlip;save();renderScore();}
     else if(act==='new'||act==='ov-new')newGameFlow();
+    else if(act==='end')endGame();
+    else if(act==='ov-reopen')reopenLast();
     else if(act==='ov-next'){ui.overlay=null;renderScore();}
     else if(act==='ov-hist'){go('hist');}
     return;
